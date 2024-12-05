@@ -1,5 +1,5 @@
-import js from '@eslint/js'
-import pluginVue from 'eslint-plugin-vue'
+import js from '@eslint/js';
+import pluginVue from 'eslint-plugin-vue';
 
 export default [
   {
@@ -18,6 +18,10 @@ export default [
   {
     rules: {
       'vue/multi-word-component-names': 'off',
+      quotes: ['error', 'single'],
+      'vue/max-attributes-per-line': 'off',
+      'vue/valid-v-slot': 'off',
+      'vue/singleline-html-element-content-newline': 'off',
     },
-  }
-]
+  },
+];
