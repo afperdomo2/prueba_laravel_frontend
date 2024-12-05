@@ -4,14 +4,14 @@
       <v-col cols="12" md="12">
         <v-card class="mt-10 w-full">
           <v-card-title class="d-flex justify-space-between px-3 py-5">
-            <span class="text-h5">Listado de elementos</span>
+            <span class="text-h5">Listado de hoteles</span>
             <v-btn
               class="text-capitalize mx-1"
               color="success"
-              @click="openDialog(null)"
+              @click="openDialog"
             >
               <v-icon>mdi-plus</v-icon>
-              Crear nuevo
+              Nuevo
             </v-btn>
           </v-card-title>
 
@@ -35,16 +35,15 @@
 
           <v-divider />
 
-          <pre>showDialog: {{ showDialog }}</pre>
-
           <v-data-table
             :headers="headers"
-            :items="items"
+            :items="hotelList.data"
             :search="search"
-            item-key="name"
+            :loading="hotelList.loading"
+            item-key="nit"
             class="elevation-1"
           >
-            <template #item.options="{ item }">
+            <template #item.actions="{ item }">
               <div class="d-flex justify-center">
                 <v-btn
                   class="text-capitalize mx-1"
@@ -57,18 +56,9 @@
                 </v-btn>
                 <v-btn
                   class="text-capitalize mx-1"
-                  color="success"
-                  size="small"
-                  @click="openDialog(item)"
-                >
-                  <v-icon>mdi-pencil</v-icon>
-                  Editar
-                </v-btn>
-                <v-btn
-                  class="text-capitalize mx-1"
                   color="error"
                   size="small"
-                  @click="deleteHotel(item)"
+                  @click="validateDeleteHotel(item)"
                 >
                   <v-icon>mdi-delete</v-icon>
                   Eliminar
@@ -80,35 +70,58 @@
       </v-col>
     </v-row>
 
-    <v-dialog v-model="showDialog" max-width="500">
+    <v-dialog v-model="showDialog" max-width="800">
       <v-card>
         <v-card-title class="headline ml-2">
-          {{ formHotel.id ? 'Editar' : 'Crear' }} elemento
+          {{ formHotel.id ? 'Editar' : 'Crear' }} un hotel
         </v-card-title>
 
         <v-divider />
 
         <v-card-text>
-          <v-form @submit.prevent="submitForm">
+          <pre>formHotel: {{ formHotel }}</pre>
+          <pre>validateForm: {{ validateForm }}</pre>
+          <v-form v-model="validateForm" @submit.prevent="submitForm">
             <v-row>
-              <v-col cols="12" md="12">
+              <v-col cols="12" md="4">
                 <v-text-field
-                  v-model="formHotel.name"
-                  label="Name"
-                  :rules="rules"
+                  v-model="formHotel.nit"
+                  label="Nit"
+                  :rules="requiredRule"
                 />
               </v-col>
-
-              <v-col cols="12" md="12">
+              <v-col cols="12" md="8">
                 <v-text-field
-                  v-model="formHotel.price"
-                  label="Price"
-                  :rules="rules"
+                  v-model="formHotel.name"
+                  label="Nombre del hotel"
+                  :rules="requiredRule"
+                />
+              </v-col>
+              <v-col cols="12" md="4">
+                <v-text-field
+                  v-model="formHotel.address"
+                  label="Dirección"
+                  :rules="requiredRule"
+                />
+              </v-col>
+              <v-col cols="12" md="4">
+                <v-text-field
+                  v-model="formHotel.city"
+                  label="Ciudad"
+                  :rules="requiredRule"
+                />
+              </v-col>
+              <v-col cols="12" md="4">
+                <v-text-field
+                  v-model="formHotel.max_rooms"
+                  label="Habitaciones máximas"
+                  type="number"
+                  :rules="requiredRule"
                 />
               </v-col>
             </v-row>
 
-            <v-row class="px-3">
+            <v-row class="px-3 mt-6">
               <v-spacer />
               <v-btn
                 class="mr-3 text-capitalize"
@@ -118,7 +131,13 @@
                 <v-icon>mdi-close</v-icon>
                 Cancelar
               </v-btn>
-              <v-btn class="text-capitalize" color="success" type="submit">
+              <v-btn
+                class="text-capitalize"
+                color="success"
+                type="submit"
+                :loading="saving"
+                :disabled="saving"
+              >
                 <v-icon>mdi-check</v-icon>
                 Guardar cambios
               </v-btn>
@@ -134,51 +153,89 @@
 import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { createHotel, getHotels, deleteHotel } from '@/services/hotelService';
+import { alertSuccess } from '@/utils/alertUtil';
+
 const router = useRouter();
 
 const search = ref('');
-
 const showDialog = ref(false);
-
-const formHotel = reactive({
-  id: null,
-  name: '',
-  price: '',
-});
-
-const rules = ref([
+const saving = ref(false);
+const hotelList = reactive({ data: [], loading: false });
+const validateForm = ref(false);
+const FORM_DEFAULT = {
+  nit: null,
+  name: null,
+  address: null,
+  city: null,
+  max_rooms: null,
+};
+const formHotel = reactive({ ...FORM_DEFAULT });
+const requiredRule = ref([
   (v) => !!v || 'Campo requerido',
-  (v) => (v && v.length >= 3) || 'Mínimo 3 caracteres',
+  (v) => (v && v.length >= 1) || 'Mínimo 1 caracter',
+]);
+const headers = ref([
+  { title: 'Nit', value: 'nit', sortable: true },
+  { title: 'Hotel', value: 'name', sortable: true },
+  { title: 'Dirección', value: 'address', sortable: false },
+  { title: 'Ciudad', value: 'city', sortable: true },
+  {
+    title: 'Habitaciones máximas',
+    value: 'max_rooms',
+    align: 'center',
+    sortable: true,
+  },
+  { title: 'Acciones', value: 'actions', align: 'center', sortable: false },
 ]);
 
-onMounted(() => {
-  console.log('onMounted');
+onMounted(async () => {
+  await fetchHotels();
 });
 
-const openDialog = (item = null) => {
-  console.log('🚀item:', item);
-  clearForm();
-  showDialog.value = true;
-  if (!item) {
-    return;
+const fetchHotels = async () => {
+  try {
+    hotelList.loading = true;
+    hotelList.data = await getHotels();
+  } catch (error) {
+    console.error('Error:', error);
+  } finally {
+    hotelList.loading = false;
   }
-  formHotel.id = item.id;
-  formHotel.name = 'Hotel galactic';
-  formHotel.price = '123123';
 };
 
-const submitForm = () => {
-  if (!formHotel.name || !formHotel.price) {
+const openDialog = () => {
+  clearForm();
+  showDialog.value = true;
+};
+
+const submitForm = async () => {
+  if (!validateForm.value) {
     return;
   }
-  clearForm();
+  saving.value = true;
+  const response = await createHotel(formHotel);
+  saving.value = false;
   closeDialog();
+  if (!response) {
+    return;
+  }
+  await fetchHotels();
+  alertSuccess('Hotel creado correctamente');
+};
+
+const validateDeleteHotel = async (item) => {
+  const response = await deleteHotel(item.id);
+  if (!response) {
+    return;
+  }
+  await fetchHotels();
+  alertSuccess('Hotel eliminado correctamente');
 };
 
 const clearForm = () => {
-  formHotel.id = null;
-  formHotel.name = '';
-  formHotel.price = '';
+  Object.assign(formHotel, FORM_DEFAULT);
+  validateForm.value = false;
 };
 
 const closeDialog = () => {
@@ -188,124 +245,10 @@ const closeDialog = () => {
 const viewHotel = (item) => {
   router.push(`/details/${item.id}`);
 };
-
-const deleteHotel = (item) => {
-  console.log('delete', item);
-};
-
-const headers = ref([
-  {
-    title: 'Dessert (100g serving)',
-    align: 'start',
-    sortable: false,
-    value: 'name',
-  },
-  { title: 'Calories', value: 'calories' },
-  { title: 'Fat (g)', value: 'fat' },
-  { title: 'Carbs (g)', value: 'carbs' },
-  { title: 'Protein (g)', value: 'protein' },
-  { title: 'Iron (%)', value: 'iron' },
-  { title: 'Options', value: 'options', align: 'center' },
-]);
-const items = ref([
-  {
-    id: 1,
-    name: 'Frozen Yogurt',
-    calories: 237,
-    fat: 9.0,
-    carbs: 37,
-    protein: 4.3,
-    iron: '1%',
-  },
-  {
-    id: 2,
-    name: 'Ice cream sandwich',
-    calories: 237,
-    fat: 9.0,
-    carbs: 37,
-    protein: 4.3,
-    iron: '1%',
-  },
-  {
-    id: 3,
-    name: 'Eclair',
-    calories: 262,
-    fat: 16.0,
-    carbs: 23,
-    protein: 6.0,
-    iron: '7%',
-  },
-  {
-    id: 4,
-    name: 'Cupcake',
-    calories: 305,
-    fat: 3.7,
-    carbs: 67,
-    protein: 4.3,
-    iron: '8%',
-  },
-  {
-    id: 5,
-    name: 'Gingerbread',
-    calories: 356,
-    fat: 16.0,
-    carbs: 49,
-    protein: 3.9,
-    iron: '16%',
-  },
-  {
-    id: 6,
-    name: 'Jelly bean',
-    calories: 375,
-    fat: 0.0,
-    carbs: 94,
-    protein: 0.0,
-    iron: '0%',
-  },
-  {
-    id: 7,
-    name: 'Lollipop',
-    calories: 392,
-    fat: 0.2,
-    carbs: 98,
-    protein: 0,
-    iron: '2%',
-  },
-  {
-    id: 8,
-    name: 'Honeycomb',
-    calories: 408,
-    fat: 3.2,
-    carbs: 87,
-    protein: 6.5,
-    iron: '45%',
-  },
-  {
-    id: 9,
-    name: 'Donut',
-    calories: 452,
-    fat: 25.0,
-    carbs: 51,
-    protein: 4.9,
-    iron: '22%',
-  },
-  {
-    id: 10,
-    name: 'KitKat',
-    calories: 518,
-    fat: 26.0,
-    carbs: 65,
-    protein: 7,
-    iron: '6%',
-  },
-  {
-    id: 11,
-    name: 'Chocolate',
-    calories: 518,
-    fat: 26.0,
-    carbs: 65,
-    protein: 7,
-    iron: '6%',
-  },
-]);
 </script>
+
+<style scoped>
+.swal2-custom-zindex {
+  z-index: 9000 !important; /* Ajusta el valor según sea necesario */
+}
+</style>
